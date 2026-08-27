@@ -485,11 +485,15 @@ function buildPeriodOptions(){
 }
 
 function autofillPeriod(){
-  buildPeriodOptions();
-  const el = document.getElementById('inc-period');
-  const sel = document.getElementById('inc-period-select');
-  if(el && !el.value.trim() && sel) el.value = sel.value;
+  try{
+    buildPeriodOptions();
+    const el = document.getElementById('inc-period');
+    const sel = document.getElementById('inc-period-select');
+    if(el && !el.value.trim() && sel) el.value = sel.value;
+  }catch(e){ console.error('autofillPeriod hata', e); }
 }
+// Dönem listesi giriş/veritabanı beklemeden hemen doldurulsun.
+autofillPeriod();
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ return (Number(n)||0).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' TL'; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -1092,7 +1096,7 @@ document.querySelectorAll('nav.bottom button').forEach(btn=>{
   document.getElementById('login-pass').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
   await waitForAuth();
   await loadDB();
-  renderAll();
+  try{ renderAll(); }catch(e){ console.error('renderAll hata', e); }
   autofillPeriod();
 })();
 </script>
