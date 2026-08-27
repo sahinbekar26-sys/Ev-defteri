@@ -100,11 +100,6 @@
   }
   nav.bottom button .ico{display:block; font-size:18px; margin-bottom:3px;}
   nav.bottom button.active{color:var(--teal);}
-  .photo-box{
-    border:2px dashed var(--line); border-radius:10px; padding:18px; text-align:center;
-    background:var(--paper); cursor:pointer;
-  }
-  .photo-box img{max-width:100%; max-height:200px; border-radius:6px; margin-top:8px;}
   .item-row{
     display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--line);
   }
@@ -181,6 +176,7 @@
   <div class="tagline">Kübra &amp; Şahin — ortak bütçe defteri</div>
   <div class="stat-row">
     <div class="stat"><div class="label">Bu ay gider</div><div class="value" id="stat-month-expense">—</div></div>
+    <div class="stat"><div class="label">Toplam tasarruf</div><div class="value" id="stat-tasarruf">—</div></div>
     <div class="stat"><div class="label">Açık borç (net)</div><div class="value" id="stat-net-debt">—</div></div>
   </div>
 </header>
@@ -255,40 +251,6 @@
       <div class="err" id="exp-err"></div>
       <button class="btn btn-primary" id="exp-save">Kaydet</button>
       <div class="ok-msg" id="exp-ok">Kaydedildi.</div>
-    </section>
-
-    <section class="card">
-      <h2>Fiş fotoğrafı ile ekle</h2>
-      <label class="field-label">Fişi kim harcadı</label>
-      <div class="chips" id="receipt-payer-chips">
-        <div class="chip selected" data-value="Kübra">Kübra</div>
-        <div class="chip" data-value="Şahin">Şahin</div>
-        <div class="chip" data-value="Ortak">Ortak</div>
-      </div>
-      <label class="field-label">Ödeme türü</label>
-      <div class="chips" id="receipt-method-chips">
-        <div class="chip selected" data-value="Nakit">Nakit</div>
-        <div class="chip" data-value="Kredi Kartı">Kredi Kartı</div>
-        <div class="chip" data-value="EFT/Havale">EFT/Havale</div>
-      </div>
-      <label class="field-label">Tarih</label>
-      <input type="date" id="receipt-date">
-
-      <label class="field-label">Fiş fotoğrafı</label>
-      <div class="photo-box" id="photo-box">
-        <div id="photo-placeholder">Dokun ve fiş fotoğrafını seç</div>
-        <img id="photo-preview" style="display:none;">
-      </div>
-      <input type="file" accept="image/*" capture="environment" id="photo-input" style="display:none;">
-      <button class="btn btn-secondary" id="scan-btn" style="display:none;">Fişi oku</button>
-      <div class="loading-line" id="scan-loading" style="display:none;"><span class="spinner"></span>Fiş okunuyor…</div>
-      <div class="err" id="scan-err"></div>
-
-      <div id="items-wrap" style="display:none; margin-top:14px;">
-        <label class="field-label">Bulunan ürünler <span style="font-weight:400;">(gerekirse düzelt, istemediklerini kaldır)</span></label>
-        <div id="items-list"></div>
-        <button class="btn btn-primary" id="items-save">Seçilenleri ekle</button>
-      </div>
     </section>
 
     <section class="card">
@@ -438,14 +400,10 @@ const CATS = {
     {id:'diger_birikim', name:'Diğer Birikim', color:'#7A7566'},
   ]
 };
-const RECEIPT_CATS = ['market','saglik','kisisel','ev','diger'];
-
 let DB = {expenses:[], incomes:[], debts:[]};
 let currentType = 'gider';
 let currentCat = CATS.gider[0].id;
 let currentKimIcin = null;
-let scannedImage = null;
-let scannedItems = [];
 
 const TR_MONTHS = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
 // Maaş dönemi: her ayın 15'inden bir sonraki ayın 15'ine kadar.
@@ -680,8 +638,6 @@ setupChips('payer-chips', (v)=>{
 setupChips('method-chips', ()=>{});
 setupChips('kimicin-chips', ()=>{});
 setupChips('faturaturu-chips', ()=>{});
-setupChips('receipt-payer-chips', ()=>{});
-setupChips('receipt-method-chips', ()=>{});
 const INCOME_TYPES = {
   'Kübra': ['Ham Maaş','Taban Ödeme','Teşvik','Fazla Mesai','Diğer'],
   'Şahin': ['Ham Maaş','Taban Ödeme','Teşvik','Fazla Mesai','Diğer'],
@@ -703,7 +659,6 @@ renderIncTypeChips();
 setupChips('debt-dir-chips', ()=>{});
 
 document.getElementById('exp-date').value = todayISO();
-document.getElementById('receipt-date').value = todayISO();
 document.getElementById('debt-date').value = todayISO();
 renderCatChips();
 
@@ -738,99 +693,6 @@ document.getElementById('exp-save').addEventListener('click', async ()=>{
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-desc').value = '';
   document.getElementById('exp-installment').value = '';
-  flashOk('exp-ok');
-  renderAll();
-});
-
-document.getElementById('photo-box').addEventListener('click', ()=>document.getElementById('photo-input').click());
-document.getElementById('photo-input').addEventListener('change', (e)=>{
-  const file = e.target.files[0]; if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    scannedImage = {base64: reader.result.split(',')[1], mediaType: file.type};
-    document.getElementById('photo-preview').src = reader.result;
-    document.getElementById('photo-preview').style.display = 'block';
-    document.getElementById('photo-placeholder').style.display = 'none';
-    document.getElementById('scan-btn').style.display = 'block';
-    document.getElementById('items-wrap').style.display = 'none';
-    showErr('scan-err','');
-  };
-  reader.readAsDataURL(file);
-});
-
-document.getElementById('scan-btn').addEventListener('click', async ()=>{
-  if(!scannedImage) return;
-  showErr('scan-err','');
-  document.getElementById('scan-loading').style.display = 'block';
-  document.getElementById('scan-btn').style.display = 'none';
-  try{
-    const prompt = "Bu bir market veya alışveriş fişi görüntüsüdür. Fişteki her ürünü ve fiyatını çıkar. Her ürüne şu kategorilerden birini ata (id olarak): market (gıda/market ürünleri), saglik (ilaç/sağlık), kisisel (kişisel bakım), ev (ev/temizlik malzemesi), diger. SADECE aşağıdaki JSON formatında yanıt ver, başka hiçbir açıklama, yorum veya markdown ekleme: [{\"name\":\"ürün adı\",\"price\":12.50,\"category\":\"market\"}] Fiyatları ondalık nokta kullanan sayı olarak ver, TL işareti ekleme.";
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-6", max_tokens:1000,
-        messages:[{role:"user", content:[
-          {type:"image", source:{type:"base64", media_type: scannedImage.mediaType, data: scannedImage.base64}},
-          {type:"text", text: prompt}
-        ]}]
-      })
-    });
-    const data = await resp.json();
-    const textBlock = (data.content||[]).find(b=>b.type==='text');
-    if(!textBlock) throw new Error('empty');
-    const clean = textBlock.text.replace(/```json|```/g,'').trim();
-    const parsed = JSON.parse(clean);
-    if(!Array.isArray(parsed) || parsed.length===0) throw new Error('empty-list');
-    scannedItems = parsed.map(p=>({id:uid(), name:p.name||'ürün', price:Number(p.price)||0, category: RECEIPT_CATS.includes(p.category)?p.category:'diger', checked:true}));
-    renderItems();
-    document.getElementById('items-wrap').style.display = 'block';
-  }catch(err){
-    showErr('scan-err','Fiş okunamadı. Fotoğraf net değilse tekrar dene, ya da harcamayı elle girebilirsin.');
-    document.getElementById('scan-btn').style.display = 'block';
-  }
-  document.getElementById('scan-loading').style.display = 'none';
-});
-
-function renderItems(){
-  const el = document.getElementById('items-list');
-  el.innerHTML = scannedItems.map(it=>`
-    <div class="item-row" data-id="${it.id}">
-      <input type="checkbox" ${it.checked?'checked':''} class="it-check">
-      <input type="text" class="iname it-name" value="${it.name.replace(/"/g,'&quot;')}">
-      <input type="number" class="it-price" value="${it.price}" step="0.01">
-      <select class="it-cat">
-        ${RECEIPT_CATS.map(c=>`<option value="${c}" ${c===it.category?'selected':''}>${catInfo(c).name}</option>`).join('')}
-      </select>
-    </div>`).join('');
-}
-document.getElementById('items-save').addEventListener('click', async ()=>{
-  const rows = document.querySelectorAll('#items-list .item-row');
-  const date = document.getElementById('receipt-date').value || todayISO();
-  const payer = selectedChip('receipt-payer-chips');
-  const method = selectedChip('receipt-method-chips');
-  let addedCount = 0;
-  rows.forEach(row=>{
-    const checked = row.querySelector('.it-check').checked;
-    if(!checked) return;
-    const name = row.querySelector('.it-name').value.trim();
-    const price = parseFloat(row.querySelector('.it-price').value);
-    const category = row.querySelector('.it-cat').value;
-    if(!name || !price || price<=0) return;
-    DB.expenses.push({
-      id: uid(), kind:'gider', category, amount: price, desc: name,
-      payer, method, installment:'', kimIcin:null, date, source:'fiş'
-    });
-    addedCount++;
-  });
-  if(addedCount===0){ showErr('scan-err','En az bir ürün seçili ve geçerli olmalı.'); return; }
-  const ok = await saveDB();
-  if(!ok){ showErr('scan-err','Kaydedilemedi, tekrar dene.'); return; }
-  document.getElementById('items-wrap').style.display = 'none';
-  document.getElementById('photo-preview').style.display = 'none';
-  document.getElementById('photo-placeholder').style.display = 'block';
-  document.getElementById('scan-btn').style.display = 'none';
-  scannedImage = null; scannedItems = [];
-  document.getElementById('photo-input').value = '';
   flashOk('exp-ok');
   renderAll();
 });
@@ -987,9 +849,14 @@ function renderOzet(){
   const filter = document.getElementById('ozet-month').value || 'all';
   const exps = DB.expenses.filter(e=> filter==='all' || monthKey(e.date)===filter);
   const giderExps = exps.filter(e=>e.kind==='gider');
+  const yatirimExps = exps.filter(e=>e.kind==='yatirim');
+  const totalTasarruf = yatirimExps.reduce((s,e)=>s+e.amount,0);
 
   document.getElementById('stat-month-expense').textContent = money(
     DB.expenses.filter(e=>e.kind==='gider' && monthKey(e.date)===monthKey(todayISO())).reduce((s,e)=>s+e.amount,0)
+  );
+  document.getElementById('stat-tasarruf').textContent = money(
+    DB.expenses.filter(e=>e.kind==='yatirim').reduce((s,e)=>s+e.amount,0)
   );
 
   const catTotals = {};
@@ -1041,12 +908,14 @@ function renderOzet(){
   const incomeTotal = filter==='all' ? DB.incomes.reduce((s,i)=>s+i.amount,0) : 0;
   const netEl = document.getElementById('ozet-netgelir');
   if(filter==='all'){
-    const net = incomeTotal - totalGider;
+    const net = incomeTotal - totalGider - totalTasarruf;
     netEl.innerHTML = `<div class="bar-row"><div class="top"><span>Toplam gelir</span><span>${money(incomeTotal)}</span></div></div>
       <div class="bar-row"><div class="top"><span>Toplam gider</span><span>${money(totalGider)}</span></div></div>
-      <div class="highlight-box"><div class="label">Net</div><div class="value">${money(net)}</div></div>`;
+      <div class="bar-row"><div class="top"><span>Toplam tasarruf/yatırım</span><span>${money(totalTasarruf)}</span></div></div>
+      <div class="highlight-box"><div class="label">Net (gider ve tasarruf ayrıldıktan sonra kalan)</div><div class="value">${money(net)}</div></div>`;
   } else {
-    netEl.innerHTML = `<div class="empty" style="padding:8px 0;">Gelir dönem bazlı kaydedildiği için aylık karşılaştırma sadece "Tüm zamanlar" seçiliyken gösterilir. Gelir sekmesinden dönem toplamlarını görebilirsin.</div>`;
+    netEl.innerHTML = `<div class="bar-row"><div class="top"><span>Bu dönem tasarruf/yatırım</span><span>${money(totalTasarruf)}</span></div></div>
+      <div class="empty" style="padding:8px 0;">Gelir dönem bazlı kaydedildiği için aylık karşılaştırma sadece "Tüm zamanlar" seçiliyken gösterilir. Gelir sekmesinden dönem toplamlarını görebilirsin.</div>`;
   }
 
   const egitimAmt = giderExps.filter(e=>e.category==='okul'||e.category==='egitim_ekstra').reduce((s,e)=>s+e.amount,0);
