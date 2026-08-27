@@ -1073,11 +1073,11 @@ function renderOzet(){
 }
 
 function renderAll(){
-  renderRecent();
-  renderIncome();
-  renderDebts();
-  populateMonthSelect();
-  renderOzet();
+  try{ renderRecent(); }catch(e){ console.error('renderRecent hata', e); }
+  try{ renderIncome(); }catch(e){ console.error('renderIncome hata', e); }
+  try{ renderDebts(); }catch(e){ console.error('renderDebts hata', e); }
+  try{ populateMonthSelect(); }catch(e){ console.error('populateMonthSelect hata', e); }
+  try{ renderOzet(); }catch(e){ console.error('renderOzet hata', e); }
 }
 
 document.getElementById('ozet-month').addEventListener('change', renderOzet);
