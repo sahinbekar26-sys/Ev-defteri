@@ -527,6 +527,30 @@ function waitForAuth(){
   });
 }
 
+function toArray(v){
+  if(!v) return [];
+  if(Array.isArray(v)) return v;
+  return Object.values(v);
+}
+
+// Eski sürümde tüm veri tek seferde (dizi olarak) yazılıyordu. Artık her kayıt
+// kendi id'siyle ayrı saklanıyor. Eski biçimde veri bulunursa, sessizce yeni
+// biçime taşır (id bazlı) — böylece silme/güncelleme her zaman doğru kaydı bulur.
+async function migrateIfNeeded(remote){
+  if(!fbRef || !remote) return;
+  const collections = ['expenses','incomes','debts'];
+  for(const coll of collections){
+    if(Array.isArray(remote[coll]) && remote[coll].length>0){
+      try{
+        const items = remote[coll];
+        const keyed = {};
+        items.forEach(it=>{ if(it && it.id) keyed[it.id] = it; });
+        await fbRef.child(coll).set(keyed);
+      }catch(e){ console.error('Taşıma hatası ('+coll+')', e); }
+    }
+  }
+}
+
 async function loadDB(){
   // Önce yerelde (çevrimdışı) ne varsa onu göster, Firebase gelince üzerine yazılacak.
   try{
@@ -542,11 +566,13 @@ async function loadDB(){
       const snap = await fbRef.once('value');
       const remote = snap.val();
       if(remote){
-        DB = remote;
-        if(!DB.expenses) DB.expenses=[];
-        if(!DB.incomes) DB.incomes=[];
-        if(!DB.debts) DB.debts=[];
+        DB = {
+          expenses: toArray(remote.expenses),
+          incomes: toArray(remote.incomes),
+          debts: toArray(remote.debts)
+        };
         localStorage.setItem('household-data', JSON.stringify(DB));
+        await migrateIfNeeded(remote);
       }
     }catch(e){ console.error('Firebase okunamadı, yerel veriyle devam ediliyor', e); }
 
@@ -555,25 +581,40 @@ async function loadDB(){
       const remote = snap.val();
       if(!remote) return;
       if(suppressNextRemoteRender){ suppressNextRemoteRender = false; return; }
-      DB = remote;
-      if(!DB.expenses) DB.expenses=[];
-      if(!DB.incomes) DB.incomes=[];
-      if(!DB.debts) DB.debts=[];
+      DB = {
+        expenses: toArray(remote.expenses),
+        incomes: toArray(remote.incomes),
+        debts: toArray(remote.debts)
+      };
       localStorage.setItem('household-data', JSON.stringify(DB));
       renderAll();
     });
   }
 }
 async function saveDB(){
+  // Genel/yedek kayıt: yerel önbelleği günceller. Firebase'e artık her kayıt
+  // kendi yoluna (fbSetItem/fbRemoveItem ile) ayrı ayrı yazılıyor — böylece
+  // eşinizin cihazındaki eski veri sizin yeni eklediğinizi silmiyor.
   try{ localStorage.setItem('household-data', JSON.stringify(DB)); }catch(e){}
-  if(fbRef){
-    try{
-      suppressNextRemoteRender = true;
-      await fbRef.set(DB);
-      return true;
-    }catch(e){ console.error('Firebase kaydedilemedi', e); return false; }
-  }
   return true;
+}
+async function fbSetItem(collection, item){
+  try{ localStorage.setItem('household-data', JSON.stringify(DB)); }catch(e){}
+  if(!fbRef) return true;
+  try{
+    suppressNextRemoteRender = true;
+    await fbRef.child(collection).child(item.id).set(item);
+    return true;
+  }catch(e){ console.error('Firebase kaydedilemedi', e); return false; }
+}
+async function fbRemoveItem(collection, id){
+  try{ localStorage.setItem('household-data', JSON.stringify(DB)); }catch(e){}
+  if(!fbRef) return true;
+  try{
+    suppressNextRemoteRender = true;
+    await fbRef.child(collection).child(id).remove();
+    return true;
+  }catch(e){ console.error('Firebase silinemedi', e); return false; }
 }
 
 function setupChips(containerId, onChange){
@@ -688,7 +729,7 @@ document.getElementById('exp-save').addEventListener('click', async ()=>{
     date, source:'manual'
   };
   DB.expenses.push(entry);
-  const ok = await saveDB();
+  const ok = await fbSetItem('expenses', entry);
   if(!ok){ showErr('exp-err','Kaydedilemedi, internet bağlantını kontrol edip tekrar dene.'); return; }
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-desc').value = '';
@@ -703,11 +744,12 @@ document.getElementById('inc-save').addEventListener('click', async ()=>{
   const amount = parseFloat(document.getElementById('inc-amount').value);
   if(!period){ showErr('inc-err','Dönem adı gir.'); return; }
   if(!amount || amount<=0){ showErr('inc-err','Geçerli bir tutar gir.'); return; }
-  DB.incomes.push({
+  const entry = {
     id: uid(), period, person: selectedChip('inc-person-chips'),
     type: selectedChip('inc-type-chips'), amount
-  });
-  const ok = await saveDB();
+  };
+  DB.incomes.push(entry);
+  const ok = await fbSetItem('incomes', entry);
   if(!ok){ showErr('inc-err','Kaydedilemedi, tekrar dene.'); return; }
   document.getElementById('inc-amount').value = '';
   flashOk('inc-ok');
@@ -721,11 +763,12 @@ document.getElementById('debt-save').addEventListener('click', async ()=>{
   const date = document.getElementById('debt-date').value;
   if(!name){ showErr('debt-err','Kiminle olduğunu gir.'); return; }
   if(!amount || amount<=0){ showErr('debt-err','Geçerli bir tutar gir.'); return; }
-  DB.debts.push({
+  const entry = {
     id: uid(), name, direction: selectedChip('debt-dir-chips'), totalAmount: amount,
     date, note: document.getElementById('debt-note').value.trim(), payments:[]
-  });
-  const ok = await saveDB();
+  };
+  DB.debts.push(entry);
+  const ok = await fbSetItem('debts', entry);
   if(!ok){ showErr('debt-err','Kaydedilemedi, tekrar dene.'); return; }
   document.getElementById('debt-name').value = '';
   document.getElementById('debt-amount').value = '';
@@ -739,17 +782,17 @@ async function addPayment(debtId, amountInput, noteInput, dateInput){
   if(!amount || amount<=0){ amountInput.style.borderColor = 'var(--danger)'; return; }
   const debt = DB.debts.find(d=>d.id===debtId);
   debt.payments.push({id: uid(), amount, note: noteInput.value.trim(), date: dateInput.value || todayISO()});
-  await saveDB();
+  await fbSetItem('debts', debt);
   renderAll();
 }
 
 async function deleteExpense(id){
   DB.expenses = DB.expenses.filter(e=>e.id!==id);
-  await saveDB(); renderAll();
+  await fbRemoveItem('expenses', id); renderAll();
 }
 async function deleteDebt(id){
   DB.debts = DB.debts.filter(d=>d.id!==id);
-  await saveDB(); renderAll();
+  await fbRemoveItem('debts', id); renderAll();
 }
 
 function renderRecent(){
@@ -774,7 +817,7 @@ function renderRecent(){
 
 async function deleteIncome(id){
   DB.incomes = DB.incomes.filter(i=>i.id!==id);
-  await saveDB(); renderAll();
+  await fbRemoveItem('incomes', id); renderAll();
 }
 
 function renderIncome(){
