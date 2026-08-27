@@ -301,7 +301,8 @@
   <div class="view" id="view-gelir">
     <section class="card">
       <h2>Gelir ekle <small>maaş dönemi bazlı</small></h2>
-      <label class="field-label">Dönem adı <span style="font-weight:400; color:var(--ink-soft);">(otomatik, gerekirse düzenleyebilirsin)</span></label>
+      <label class="field-label">Dönem adı <span style="font-weight:400; color:var(--ink-soft);">(listeden seç, gerekirse elle de yazabilirsin)</span></label>
+      <select id="inc-period-select" style="width:100%; box-sizing:border-box; padding:12px 14px; margin-bottom:8px; border:1px solid var(--line); border-radius:10px; font-size:15px; background:#fff;"></select>
       <input type="text" id="inc-period" placeholder="örn. 15 Tem - 15 Ağu 2026">
 
       <label class="field-label">Kişi / Kaynak</label>
@@ -448,23 +449,46 @@ let scannedItems = [];
 
 const TR_MONTHS = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
 // Maaş dönemi: her ayın 15'inden bir sonraki ayın 15'ine kadar.
-function currentPeriodLabel(d){
-  d = d || new Date();
-  const day = d.getDate();
-  let startMonth, startYear, endMonth, endYear;
-  if(day >= 16){
-    startMonth = d.getMonth(); startYear = d.getFullYear();
-  } else {
-    startMonth = d.getMonth() - 1; startYear = d.getFullYear();
+// offset 0 = içinde bulunulan dönem, negatif = geçmiş dönemler, pozitif = gelecek dönemler.
+function periodLabelForOffset(offset){
+  const now = new Date();
+  const day = now.getDate();
+  let startMonth, startYear;
+  if(day >= 16){ startMonth = now.getMonth(); startYear = now.getFullYear(); }
+  else {
+    startMonth = now.getMonth() - 1; startYear = now.getFullYear();
     if(startMonth < 0){ startMonth = 11; startYear -= 1; }
   }
-  endMonth = startMonth + 1; endYear = startYear;
+  startMonth += offset;
+  while(startMonth < 0){ startMonth += 12; startYear -= 1; }
+  while(startMonth > 11){ startMonth -= 12; startYear += 1; }
+  let endMonth = startMonth + 1, endYear = startYear;
   if(endMonth > 11){ endMonth = 0; endYear += 1; }
   return `15 ${TR_MONTHS[startMonth]} - 15 ${TR_MONTHS[endMonth]} ${endYear}`;
 }
+function currentPeriodLabel(){ return periodLabelForOffset(0); }
+
+function buildPeriodOptions(){
+  const sel = document.getElementById('inc-period-select');
+  if(!sel) return;
+  sel.innerHTML = '';
+  // 2 ay geçmişten başlayıp 6 ay ileriye kadar dönem seçenekleri.
+  for(let offset = -2; offset <= 6; offset++){
+    const label = periodLabelForOffset(offset);
+    const opt = document.createElement('option');
+    opt.value = label;
+    opt.textContent = label + (offset === 0 ? ' (bu dönem)' : '');
+    if(offset === 0) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.onchange = ()=>{ document.getElementById('inc-period').value = sel.value; };
+}
+
 function autofillPeriod(){
+  buildPeriodOptions();
   const el = document.getElementById('inc-period');
-  if(el && !el.value.trim()) el.value = currentPeriodLabel();
+  const sel = document.getElementById('inc-period-select');
+  if(el && !el.value.trim() && sel) el.value = sel.value;
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ return (Number(n)||0).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' TL'; }
